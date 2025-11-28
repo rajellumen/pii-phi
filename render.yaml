@@ -2,7 +2,7 @@ services:
   - type: web
     name: pii-phi
     env: python
-    buildCommand: pip install --upgrade pip setuptools wheel && pip install tokenizers==0.15.2 --only-binary=:all: && pip install -r requirements.txt
+    buildCommand: bash build.sh
     startCommand: gunicorn app:app
     envVars:
       - key: FLASK_SECRET_KEY
