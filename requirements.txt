@@ -1,6 +1,7 @@
+--upgrade pip
 Flask==3.0.0
 torch==2.5.1
+--only-binary :all: tokenizers
 transformers==4.35.0
-tokenizers>=0.15.0
 gunicorn==21.2.0
 
