@@ -222,4 +222,6 @@ if __name__ == '__main__':
     # Use a production-grade WSGI server (like Gunicorn) for real deployment
     # This is for local testing only:
     # Set FLASK_SECRET_KEY and DEID_API_KEY environment variables before running
-    app.run(debug=True, host='0.0.0.0', port=9000)
+    # Render provides PORT environment variable
+    port = int(os.environ.get('PORT', 9000))
+    app.run(debug=False, host='0.0.0.0', port=port)
