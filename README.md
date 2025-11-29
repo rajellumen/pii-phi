@@ -52,45 +52,85 @@ python app.py
 
 The application will be available at `http://localhost:9000`
 
-## Deployment on Render
+## Deployment on Amazon EC2
 
 ### Prerequisites
 
-1. GitHub repository connected (already done)
-2. Render account
+1. AWS EC2 instance (Ubuntu recommended)
+2. Python 3.10+ installed
+3. Git installed
 
 ### Deployment Steps
 
-1. **Create a new Web Service on Render:**
-   - Go to your Render dashboard
-   - Click "New +" → "Web Service"
-   - Connect your GitHub repository: `rajellumen/pii-phi`
-   - Select the repository
+1. **Connect to your EC2 instance:**
+```bash
+ssh -i your-key.pem ubuntu@your-ec2-ip
+```
 
-2. **Configure the service:**
-   - **Name**: `pii-phi` (or your preferred name)
-   - **Environment**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `gunicorn app:app`
-   - **Plan**: Choose based on your needs (Free tier available, but may have limitations)
+2. **Clone the repository:**
+```bash
+git clone https://github.com/rajellumen/pii-phi.git
+cd pii-phi
+```
 
-3. **Set Environment Variables:**
-   In the Render dashboard, add these environment variables:
-   - `FLASK_SECRET_KEY`: A secure random string (generate one)
-   - `DEID_API_KEY`: (Optional) API key for protecting the `/deidentify` endpoint
-   - `PORT`: (Auto-set by Render, but you can verify it's available)
+3. **Set up Python virtual environment:**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
 
-4. **Deploy:**
-   - Click "Create Web Service"
-   - Render will automatically build and deploy your application
-   - The first deployment may take longer as it downloads the BERT model
+4. **Install dependencies:**
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-### Important Notes for Render Deployment
+5. **Set environment variables:**
+```bash
+export FLASK_SECRET_KEY="your-secret-key-here"
+export DEID_API_KEY="your-api-key-here"  # Optional
+export PORT=9000  # Or your preferred port
+```
 
-- **Model Download**: The first deployment will download the BERT model (~500MB), which may take 5-10 minutes
-- **Memory Requirements**: The model requires significant memory. Consider using at least 512MB RAM (Free tier has 512MB)
-- **Build Time**: Initial build may take 10-15 minutes due to PyTorch and model downloads
-- **Cold Starts**: Free tier services spin down after inactivity, causing a cold start delay
+6. **Run with Gunicorn (Production):**
+```bash
+gunicorn -w 2 -b 0.0.0.0:9000 app:app
+```
+
+7. **Or run as a systemd service (Recommended):**
+   - Create `/etc/systemd/system/pii-phi.service`:
+   ```ini
+   [Unit]
+   Description=PII/PHI De-identification Service
+   After=network.target
+
+   [Service]
+   User=ubuntu
+   WorkingDirectory=/home/ubuntu/pii-phi
+   Environment="PATH=/home/ubuntu/pii-phi/venv/bin"
+   Environment="FLASK_SECRET_KEY=your-secret-key-here"
+   Environment="DEID_API_KEY=your-api-key-here"
+   ExecStart=/home/ubuntu/pii-phi/venv/bin/gunicorn -w 2 -b 0.0.0.0:9000 app:app
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   - Enable and start:
+   ```bash
+   sudo systemctl enable pii-phi
+   sudo systemctl start pii-phi
+   ```
+
+### Important Notes for EC2 Deployment
+
+- **Security Groups**: Ensure port 9000 (or your chosen port) is open in EC2 Security Groups
+- **Model Download**: First run will download the BERT model (~500MB), which may take 5-10 minutes
+- **Memory Requirements**: The model requires significant memory. Use at least 2GB RAM instance
+- **HTTPS**: Use a reverse proxy (nginx) with SSL certificate for production
+- **Firewall**: Configure ufw to allow your port:
+  ```bash
+  sudo ufw allow 9000/tcp
+  ```
 
 ### Environment Variables Reference
 
