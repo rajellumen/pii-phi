@@ -1715,6 +1715,18 @@ class ClinicalDeidentifier:
                                 original_name = original_text[idx:end_idx]
                     
                     if original_name:
+                        # Determine the replacement to use
+                        # If the original name doesn't have a title but the surrogate does, extract just the name part
+                        replacement_to_use = surrogate
+                        original_has_title = any(title in original_name.lower() for title in ['ms', 'mr', 'mrs', 'miss', 'dr', 'doctor', 'prof', 'professor'])
+                        surrogate_has_title = any(title in surrogate.lower() for title in ['ms', 'mr', 'mrs', 'miss', 'dr', 'doctor', 'prof', 'professor'])
+                        
+                        if not original_has_title and surrogate_has_title:
+                            # Extract the name part from surrogate (remove title if present)
+                            # e.g., "Ms. Emily Jackson" -> "Emily Jackson"
+                            title_pattern = r'^(Ms\.|Mr\.|Mrs\.|Miss\.|Dr\.|Doctor\.|Prof\.|Professor\.)\s+'
+                            replacement_to_use = re.sub(title_pattern, '', surrogate, flags=re.IGNORECASE).strip()
+                        
                         # Replace all occurrences of this name in the text
                         try:
                             pattern = rf'\b{re.escape(original_name)}\b'
@@ -1725,12 +1737,32 @@ class ClinicalDeidentifier:
                                 # Check if already replaced
                                 if text[start_pos:end_pos].lower() != name_lower:
                                     continue
+                                
+                                # CRITICAL: Check if this name is already part of a replaced title+name pattern
+                                # Look at the context before this match to see if there's a title+name pattern
+                                before_context = text[max(0, start_pos - 50):start_pos]
+                                # Check if there's a pattern like "Ms. [Name]" right before this match
+                                title_name_pattern = rf'(Ms\.|Mr\.|Mrs\.|Miss\.|Dr\.|Doctor\.|Prof\.|Professor\.)\s+{re.escape(replacement_to_use)}\b'
+                                if re.search(title_name_pattern, before_context, re.IGNORECASE):
+                                    # This name is already part of a title+name pattern, skip it
+                                    continue
+                                
+                                # Also check if this match is immediately after a title+name pattern
+                                if start_pos > 0:
+                                    check_start = max(0, start_pos - 30)
+                                    check_text = text[check_start:start_pos + len(original_name)]
+                                    # Look for "Ms. [Name] [This Name]" where [This Name] matches
+                                    full_pattern = rf'(Ms\.|Mr\.|Mrs\.|Miss\.|Dr\.|Doctor\.|Prof\.|Professor\.)\s+[A-Z][a-z]+\s+{re.escape(original_name)}\b'
+                                    if re.search(full_pattern, check_text, re.IGNORECASE):
+                                        # This is part of a title+name pattern, skip it
+                                        continue
+                                
                                 # Replace
-                                text = text[:start_pos] + surrogate + text[end_pos:]
+                                text = text[:start_pos] + replacement_to_use + text[end_pos:]
                         except Exception:
                             # If regex fails, try simple string replacement
                             try:
-                                text = text.replace(original_name, surrogate)
+                                text = text.replace(original_name, replacement_to_use)
                             except Exception:
                                 pass
                 except Exception:
@@ -1837,20 +1869,26 @@ class ClinicalDeidentifier:
                         continue
                     
                     # Also check if there's a pattern like "Ms. [Name] [Last Name]." followed by our match
-                    # This handles cases like "Ms. Anthony Wright. Anthony Wright" where the second occurrence
-                    # should not have "Wright" replaced again
+                    # This handles cases like "Ms. Emily Jackson. Emily Jackson" where the second occurrence
+                    # should not have "Jackson" replaced again
                     before_match = text[check_start:start_pos]
                     # Look for "Ms. [Name] [Last Name]." or "Ms. [Name] [Last Name] " pattern
-                    pattern_before = rf'(Ms\.|Mr\.|Mrs\.|Miss\.|Dr\.|Doctor\.|Prof\.|Professor\.)\s+[A-Z][a-z]+\s+[A-Z][a-z]+[\.\s]'
+                    # More specific: "Ms. [Name] [Last Name]" followed by period/space and then our match
+                    pattern_before = rf'(Ms\.|Mr\.|Mrs\.|Miss\.|Dr\.|Doctor\.|Prof\.|Professor\.)\s+[A-Z][a-z]+\s+{re.escape(matched_text)}[\.\s]'
                     if re.search(pattern_before, before_match, re.IGNORECASE):
-                        # Check if the last word before our match matches the surrogate name
+                        # This last name immediately follows a title+name pattern with the same last name
                         # This means we're trying to replace a last name that's already part of a full name
-                        words_before = before_match.strip().split()
-                        if len(words_before) >= 3:
-                            # Check if the pattern is "Ms. [Name] [Last Name]" and our match is the same last name
-                            if words_before[-1].rstrip('.,').lower() == matched_text.lower():
-                                # This is already part of a full name, skip it
-                                continue
+                        continue
+                    
+                    # Also check if the surrogate name appears right before this match
+                    # This handles cases where "Ms. Emily Jackson" was replaced, and then "Emily Jackson" appears
+                    # We need to check if "Emily Jackson" (the surrogate name) appears right before our match
+                    if surrogate_name and len(surrogate_name) > 0:
+                        # Check if surrogate_name appears right before this match (with or without period)
+                        surrogate_pattern = rf'{re.escape(surrogate_name)}[\.\s]'
+                        if re.search(surrogate_pattern, before_match, re.IGNORECASE):
+                            # The surrogate name appears right before, so this last name is already part of it
+                            continue
                 
                 # Check if already replaced
                 already_replaced = False
